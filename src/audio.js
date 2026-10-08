@@ -1,6 +1,6 @@
 // All sound is synthesised with WebAudio - no files. Must be init()'d from a user gesture (iOS).
 let ctx = null;
-let master, sfxBus, musicBus, rumbleGain, rumbleFilter, noiseBuf;
+let master, sfxBus, musicBus, rumbleGain, rumbleFilter, noiseBuf, hissGain, squealGain;
 let muted = false;
 let chuffAcc = 0, clackAcc = 0, musicAcc = 0, musicStep = 0, dark = 0;
 let lastOver = 0;
@@ -34,6 +34,22 @@ export function init() {
   rumbleGain = ctx.createGain(); rumbleGain.gain.value = 0;
   src.connect(rumbleFilter); rumbleFilter.connect(rumbleGain); rumbleGain.connect(master);
   src.start();
+
+  // brakes: air hiss while the brake is held + wheel squeal under hard braking (gains driven by setBrake)
+  const hiss = ctx.createBufferSource(); hiss.buffer = noiseBuf; hiss.loop = true;
+  const hissF = ctx.createBiquadFilter(); hissF.type = 'bandpass'; hissF.frequency.value = 4200; hissF.Q.value = 0.6;
+  hissGain = ctx.createGain(); hissGain.gain.value = 0;
+  hiss.connect(hissF); hissF.connect(hissGain); hissGain.connect(sfxBus);
+  hiss.start(0, 0.7);
+  squealGain = ctx.createGain(); squealGain.gain.value = 0; squealGain.connect(sfxBus);
+  const wobble = ctx.createOscillator(); wobble.frequency.value = 7; const wobbleAmt = ctx.createGain(); wobbleAmt.gain.value = 45;
+  wobble.connect(wobbleAmt);
+  for (const [f, v] of [[2350, 1], [3130, 0.55]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain(); g.gain.value = v;
+    wobbleAmt.connect(o.frequency); o.connect(g); g.connect(squealGain); o.start();
+  }
+  wobble.start();
 
   unlockIOS();
   resume();
@@ -127,7 +143,25 @@ export const sfx = {
   },
   sad() { [392, 330, 262].forEach((f, i) => tone({ f, type: 'sine', t: i * 0.2, d: 0.5, v: 0.18 })); },
   scare() { tone({ f: 300, f2: 150, type: 'triangle', d: 0.4, v: 0.06 }); },
+  // cab controls
+  lever(push = true) { // metal "clunk" of a lever moving into its notch
+    tone({ f: push ? 190 : 150, f2: push ? 95 : 80, type: 'square', d: 0.09, v: push ? 0.07 : 0.05 });
+    noise({ d: 0.05, v: push ? 0.16 : 0.1, f: 1800, q: 3 });
+    noise({ t: 0.06, d: 0.03, v: push ? 0.08 : 0.05, f: 3200, q: 4 });
+  },
+  toggle(on = true) { // switch snapping over + a little lamp blip
+    noise({ d: 0.025, v: 0.22, f: 3800, q: 2 });
+    tone({ f: on ? 880 : 520, f2: on ? 1320 : 360, type: 'triangle', t: 0.02, d: 0.09, v: 0.1 });
+  },
+  brakeRelease() { noise({ d: 0.45, v: 0.13, f: 3600, f2: 1600, q: 0.7 }); }, // "pssshh"
 };
+
+// called every frame: hiss = brake held (0..1), squeal = how hard the wheels are biting (0..1)
+export function setBrake(hiss, squeal) {
+  if (!ctx) return;
+  hissGain.gain.setTargetAtTime(hiss * 0.07, ctx.currentTime, hiss > 0 ? 0.04 : 0.12);
+  squealGain.gain.setTargetAtTime(squeal * 0.03, ctx.currentTime, 0.08);
+}
 
 function chuff(strength) {
   noise({ d: 0.11, v: 0.17 * strength, f: 520, q: 0.8, f2: 260 });

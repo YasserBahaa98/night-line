@@ -26,7 +26,11 @@ const camera = new THREE.PerspectiveCamera(62, 1, 0.2, 800);
 const world = makeWorld(scene);
 const train = makeTrain();
 scene.add(train.root);
-const cab = makeCab(train.root);
+// sounds fire when the driver's hand reaches the switch / horn cord, so they line up with the animation
+const cab = makeCab(train.root, {
+  flip: (kind, value) => sfx.toggle(value),
+  horn: (short) => (short ? sfx.hornShort() : sfx.horn()),
+});
 const pax = makePassengers(scene, train.seats, train.doors);
 const fx = makeFx(scene);
 
@@ -98,20 +102,23 @@ function currentCap() {
 
 // hold-to-drive: the train speeds up while GO is held, brakes while SLOW is held, and keeps its speed otherwise
 const ACCEL = 5, BRAKE = 8;
-function horn(short = false) { if (short) sfx.hornShort(); else sfx.horn(); cab.act('horn'); }
+function horn(short = false) { cab.act('horn', short); }
 
 const handlers = {
   goDown() {
     if (G.state !== 'playing') return;
     if (!G.firstGo) { G.firstGo = true; UI.hideBanner(); horn(true); }
     UI.pulseGo(false);
-    G.go = true; G.capHit = false; G.emergency = false; sfx.tap();
+    G.go = true; G.capHit = false; G.emergency = false; sfx.lever(true);
   },
-  goUp() { G.go = false; },
-  slowDown() { if (G.state !== 'playing') return; G.slow = true; sfx.tap(); },
-  slowUp() { G.slow = false; },
-  head() { G.head = !G.head; sfx.click(G.head); UI.setLights(G.head, G.cabinOn); cab.act('head', G.head); },
-  cabinLights() { G.cabinOn = !G.cabinOn; sfx.click(G.cabinOn); UI.setLights(G.head, G.cabinOn); cab.act('seats', G.cabinOn); },
+  goUp() { if (G.go) sfx.lever(false); G.go = false; },
+  slowDown() { if (G.state !== 'playing') return; G.slow = true; sfx.lever(true); },
+  slowUp() {
+    if (G.slow) { sfx.lever(false); if (G.v > 0.5) sfx.brakeRelease(); }
+    G.slow = false;
+  },
+  head() { G.head = !G.head; sfx.tap(); UI.setLights(G.head, G.cabinOn); cab.act('head', G.head); },
+  cabinLights() { G.cabinOn = !G.cabinOn; sfx.tap(); UI.setLights(G.head, G.cabinOn); cab.act('seats', G.cabinOn); },
   mute() { Audio.setMuted(!Audio.isMuted()); UI.setMuteIcon(Audio.isMuted()); },
   view(v) { if (G.state === 'station') { setView(v); UI.setCamStrip(true, v); sfx.whoosh(); } },
   leave() { if (G.state === 'station') leaveStation(); },
@@ -143,7 +150,7 @@ function arrive() {
   const e = Math.abs(G.dist - S);
   const [pts, msg, kind] = e <= 6 ? [80, 'Perfect stop!', 'good'] : e <= 12 ? [60, 'Great stop!', 'good'] : e <= 20 ? [40, 'Good stop!', 'good'] : [25, 'Stopped!', 'warn'];
   award('stops', pts, `+${pts} 🚏`);
-  sfx.chime();
+  sfx.chime(); sfx.brakeRelease();
   UI.banner(msg, e <= 12 ? '🌟' : '👍', kind, 2600);
   G.station = { k, t: 0, all: false };
   pax.startBoarding(k, G.dist, (id) => {
@@ -260,7 +267,7 @@ function driveUpdate(dt) {
   if (nsIdx < 3 && dS < 300 && !G.hinted['crowd' + nsIdx]) { G.hinted['crowd' + nsIdx] = true; pax.spawnCrowd(nsIdx, S); }
   if (inApproach && G.approachSeen !== nsIdx) {
     G.approachSeen = nsIdx;
-    UI.banner('Station! Stop at the green mark', '🚏', 'good', 4200); sfx.hornShort();
+    UI.banner('Station! Stop at the green mark', '🚏', 'good', 4200); horn(true);
     UI.setStops(nsIdx, G.done);
   }
 
@@ -282,6 +289,9 @@ function driveUpdate(dt) {
   if (G.v === 0) G.emergency = false;
   G.dist += G.v * dt;
   const braking = prev - G.v;
+  // brake sounds: air hiss while the brake is held, wheel squeal when slowing hard at speed
+  const decel = dt > 0 ? braking / dt : 0;
+  Audio.setBrake(G.slow && G.v > 0 ? 1 : 0, clamp((decel - 5) / 8, 0, 1) * clamp(G.v / 8, 0, 1));
 
   // sparks when braking hard
   if (braking / dt > 4 && G.v > 2) {
@@ -385,6 +395,7 @@ function frame(now) {
 
   for (let i = timers.length - 1; i >= 0; i--) { timers[i].t -= dt; if (timers[i].t <= 0) { const f = timers.splice(i, 1)[0].fn; f(); } }
 
+  if (G.state !== 'playing' && G.state !== 'finish') Audio.setBrake(0, 0);
   if (G.state === 'playing' || G.state === 'finish') driveUpdate(dt);
   else if (G.state === 'station') {
     const st = G.station; st.t += dt;
@@ -441,7 +452,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) Audio
 
 // debug / testing hooks
 window.__nl = {
-  G, world, train, cab, pax, camera, renderer, get score() { return score; }, handlers, setView,
+  G, world, train, cab, sfx, pax, camera, renderer, get score() { return score; }, handlers, setView,
   teleport(d) { G.dist = d; G.zone = newZone(zoneIndexAt(d)); },
   // step the sim manually (used for testing when rAF is throttled, e.g. hidden tab)
   advance(sec, dt = 1 / 60) {

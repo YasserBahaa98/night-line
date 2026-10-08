@@ -82,7 +82,8 @@ function makeSwitch(x, capHex, lampHex, mat) {
   return { g, stick, lampMat, on, off, val: 0, target: 0, tip: new THREE.Vector3() };
 }
 
-export function makeCab(root) {
+// on: { flip(kind, value), horn(short) } - fired when the driver's hand actually moves the control
+export function makeCab(root, on = {}) {
   const cab = new THREE.Group();
   root.add(cab);
   const vc = cabMat({ vertexColors: true });
@@ -212,7 +213,7 @@ export function makeCab(root) {
   return {
     group: cab,
     // kind: 'head' | 'seats' | 'horn'; value = new switch state
-    act(kind, value) { queue.push({ kind, value, t: 0, done: false }); },
+    act(kind, value) { queue.push({ kind, value, t: 0, done: false }); }, // horn: value = short toot
     reset(head, seats) {
       queue.length = 0; job = null;
       swHead.val = swHead.target = head ? 1 : 0; swSeat.val = swSeat.target = seats ? 1 : 0;
@@ -245,12 +246,12 @@ export function makeCab(root) {
         if (job.kind === 'horn') {
           tmp.set(horn.position.x, horn.position.y - CORD - 0.03 - hornPull, horn.position.z);
           tgtR.copy(tmp);
-          if (job.t > REACH && !job.done) { job.done = true; }
+          if (job.t > REACH && !job.done) { job.done = true; on.horn?.(job.value); }
           hornPull = job.t > REACH ? Math.min(0.18, (job.t - REACH) * 1.2) : 0;
         } else {
           const sw = job.kind === 'head' ? swHead : swSeat;
           switchTip(sw, tgtR);
-          if (job.t > REACH && !job.done) { job.done = true; sw.target = job.value ? 1 : 0; }
+          if (job.t > REACH && !job.done) { job.done = true; sw.target = job.value ? 1 : 0; on.flip?.(job.kind, job.value); }
         }
         if (job.t > REACH + HOLD + (job.kind === 'horn' ? 0.35 : 0)) { job = null; hornPull = 0; }
       } else if (s.slow) knob(brake, tgtR);
