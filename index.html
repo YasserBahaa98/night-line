@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Night Line" />
+  <meta name="theme-color" content="#1b1740" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <title>Night Line</title>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <div id="cab"><i class="pil l"></i><i class="pil r"></i><i class="top"></i></div>
+
+  <div id="hud" class="hidden">
+    <div id="topLeft">
+      <div id="score"><span>⭐</span><b id="scoreVal">0</b></div>
+      <div id="starBar">
+        <div class="track"><i id="starFill"></i></div>
+        <s style="left:60%">★</s><s style="left:85%">★</s><s style="left:100%">★</s>
+      </div>
+    </div>
+
+    <div id="stops"><span class="dot" data-i="0">🚏</span><span class="dot" data-i="1">🚏</span><span class="dot" data-i="2">🚏</span></div>
+    <div id="banner"><span id="bannerIcon"></span><span id="bannerText"></span></div>
+    <div id="seatBox"><span class="sico">🪑</span><b id="seatNum">0</b><span class="of">/24</span><div id="pips"></div></div>
+
+    <div id="topRight">
+      <div id="comfort"><span id="face">😊</span><div class="bar"><i id="comfortFill"></i></div></div>
+      <button id="btnMute" class="mini" aria-label="sound">🔊</button>
+    </div>
+
+    <div id="camStrip">
+      <button data-view="cab" class="cam on" aria-label="driver">🚂</button>
+      <button data-view="platform" class="cam" aria-label="platform">🚏</button>
+      <button data-view="inside" class="cam" aria-label="seats">🪑</button>
+    </div>
+
+    <div id="dash">
+      <button id="btnSlow" class="big red"><span class="ic">🐢</span><em>SLOW</em></button>
+      <button id="btnHead" class="tog"><span class="ic">💡</span><em>FRONT</em></button>
+      <div id="gauge">
+        <svg viewBox="0 0 200 118" aria-hidden="true">
+          <path id="bandSlow" fill="none" stroke="#ffcf4a" stroke-width="15" />
+          <path id="bandGood" fill="none" stroke="#4ddb7a" stroke-width="15" />
+          <path id="bandFast" fill="none" stroke="#ff5a5a" stroke-width="15" />
+          <g id="needle"><path d="M100 100 L95 100 L100 30 L105 100 Z" fill="#fff6e6" stroke="#2f2b45" stroke-width="2.5" stroke-linejoin="round" /></g>
+        </svg>
+        <div id="limitSign"><span id="limitIcon">🐇</span><b id="limitNum">40</b></div>
+      </div>
+      <button id="btnCabin" class="tog"><span class="ic">🪑</span><em>SEATS</em></button>
+      <button id="btnGo" class="big green"><span class="ic">🚂</span><em>GO</em></button>
+      <button id="btnLeave" class="big green wide hidden"><span class="ic">🚩</span><em>LET'S GO!</em></button>
+    </div>
+  </div>
+
+  <div id="menu">
+    <div class="card">
+      <div class="logo"><span class="tr">🚂</span><h1>NIGHT<br />LINE</h1></div>
+      <p class="sub">Drive the little train!</p>
+      <button id="btnPlay" class="big green wide start"><span class="ic">▶</span><em>TAP TO START</em></button>
+      <div id="best"></div>
+    </div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="panel">
+      <h2 id="resTitle">Great driving!</h2>
+      <div id="stars"><i></i><i></i><i></i></div>
+      <div id="rows"></div>
+      <div id="resTotal"><span>⭐</span><b id="resScore">0</b></div>
+      <div id="resBest"></div>
+      <button id="btnAgain" class="big green wide"><span class="ic">↻</span><em>AGAIN!</em></button>
+    </div>
+  </div>
+
+  <canvas id="confetti"></canvas>
+  <div id="portrait"><span>🔄</span><p>Turn your iPad sideways</p></div>
+  <div id="fps" class="hidden"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

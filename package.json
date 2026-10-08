@@ -1,0 +1,18 @@
+{
+  "name": "night-line",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Night Line - a tap-to-drive train game for kids (Three.js + Vite)",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  }
+}
