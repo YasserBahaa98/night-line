@@ -19,14 +19,6 @@ button { font: inherit; color: inherit; border: 0; padding: 0; cursor: pointer; 
 
 #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* ---------- cab frame (pure decoration) ---------- */
-#cab { position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0; transition: opacity .8s; }
-body.driving #cab { opacity: 1; }
-#cab .pil { position: absolute; top: 0; bottom: 0; width: 9vw; background: linear-gradient(90deg, #35304f, #1f1b33); }
-#cab .pil.l { left: 0; clip-path: polygon(0 0, 100% 0, 38% 100%, 0 100%); }
-#cab .pil.r { right: 0; transform: scaleX(-1); clip-path: polygon(0 0, 100% 0, 38% 100%, 0 100%); }
-#cab .top { position: absolute; left: 0; right: 0; top: 0; height: 5.5vh; background: linear-gradient(#35304f, #26223d 70%, transparent); }
-#cab::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 14vh rgba(10, 6, 30, .55); }
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; z-index: 5; pointer-events: none; padding: calc(var(--safe-t) + 1.4vh) calc(var(--safe-r) + 1.6vw) 0 calc(var(--safe-l) + 1.6vw); }
@@ -95,8 +87,9 @@ body.driving #cab { opacity: 1; }
 .big.green { background: linear-gradient(#6dffa0, #26c065); border: 5px solid #d6ffe4; box-shadow: 0 1.1vh 0 #148041, 0 1.8vh 2.4vh rgba(0, 0, 0, .4); color: #0c3b21; text-shadow: none; }
 .big.red { background: linear-gradient(#ff8a7a, #e3453d); border: 5px solid #ffd8d2; box-shadow: 0 1.1vh 0 #962520, 0 1.8vh 2.4vh rgba(0, 0, 0, .4); color: #3b0c0c; text-shadow: none; }
 .big.orange { background: linear-gradient(#ffd66a, #ff9a2e); border: 5px solid #fff0c8; box-shadow: 0 1.1vh 0 #a85d0b, 0 1.8vh 2.4vh rgba(0, 0, 0, .4); color: #4a2705; text-shadow: none; }
-.big:active, .tog:active { transform: translateY(.9vh) scale(.97); }
-.big.green:active { box-shadow: 0 .2vh 0 #148041; } .big.red:active { box-shadow: 0 .2vh 0 #962520; } .big.orange:active { box-shadow: 0 .2vh 0 #a85d0b; }
+.big:active, .big.held, .tog:active { transform: translateY(.9vh) scale(.97); }
+.big.green:active, .big.green.held { box-shadow: 0 .2vh 0 #148041; } .big.red:active, .big.red.held { box-shadow: 0 .2vh 0 #962520; } .big.orange:active { box-shadow: 0 .2vh 0 #a85d0b; }
+.big.held { filter: brightness(1.12); }
 .big.off { filter: grayscale(.9) brightness(.6); pointer-events: none; }
 .big.pulse { animation: pulse .8s ease-in-out infinite; }
 .big.now { animation: pulse .5s ease-in-out infinite; box-shadow: 0 0 0 .8vh rgba(109, 255, 160, .55), 0 1.1vh 0 #962520, 0 0 4vh #6dffa0; }

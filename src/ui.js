@@ -139,7 +139,29 @@ export function setMuteIcon(m) { el.mute.textContent = m ? '🔇' : '🔊'; }
 // ---------- input wiring ----------
 export function bind(h) {
   const press = (node, fn) => node.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(e); });
-  press(el.slow, () => h.slow()); press(el.go, () => h.go()); press(el.leave, () => h.leave());
+  // hold buttons: down starts, lifting the finger (or losing the pointer) stops
+  const hold = (node, down, up) => {
+    let id = null;
+    node.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); id = e.pointerId; node.classList.add('held'); down();
+      try { node.setPointerCapture(id); } catch { /* synthetic / already-gone pointer */ }
+    });
+    const end = (e) => { if (id === null || (e && e.pointerId !== id)) return; id = null; node.classList.remove('held'); up(); };
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => node.addEventListener(ev, end));
+  };
+  hold(el.go, () => h.goDown(), () => h.goUp());
+  hold(el.slow, () => h.slowDown(), () => h.slowUp());
+  press(el.leave, () => h.leave());
+  // keyboard (desktop): hold Up/W to go, Down/S to brake, H headlight, L seat lights
+  const keys = { ArrowUp: ['goDown', 'goUp', el.go], KeyW: ['goDown', 'goUp', el.go], ArrowDown: ['slowDown', 'slowUp', el.slow], KeyS: ['slowDown', 'slowUp', el.slow] };
+  addEventListener('keydown', (e) => {
+    const k = keys[e.code];
+    if (k) { e.preventDefault(); if (!e.repeat) { k[2].classList.add('held'); h[k[0]](); } return; }
+    if (e.repeat) return;
+    if (e.code === 'KeyH') h.head(); else if (e.code === 'KeyL') h.cabinLights();
+  });
+  addEventListener('keyup', (e) => { const k = keys[e.code]; if (k) { k[2].classList.remove('held'); h[k[1]](); } });
+  addEventListener('blur', () => { h.goUp(); h.slowUp(); el.go.classList.remove('held'); el.slow.classList.remove('held'); });
   press(el.head, () => h.head()); press(el.cabin, () => h.cabinLights()); press(el.mute, () => h.mute());
   el.camStrip.querySelectorAll('.cam').forEach((b) => press(b, () => h.view(b.dataset.view)));
   // PLAY / AGAIN use "click" (fires after touchend) so iOS accepts them as the audio-unlocking gesture

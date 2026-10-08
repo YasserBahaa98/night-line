@@ -8,6 +8,7 @@ import * as Audio from './audio.js';
 import * as UI from './ui.js';
 import { makeWorld } from './world.js';
 import { makeTrain } from './train.js';
+import { makeCab } from './cab.js';
 import { makePassengers } from './passengers.js';
 import { makeFx } from './fx.js';
 import { MAX, createScore, starsFor, loadBest, saveBest } from './scoring.js';
@@ -25,6 +26,7 @@ const camera = new THREE.PerspectiveCamera(62, 1, 0.2, 800);
 const world = makeWorld(scene);
 const train = makeTrain();
 scene.add(train.root);
+const cab = makeCab(train.root);
 const pax = makePassengers(scene, train.seats, train.doors);
 const fx = makeFx(scene);
 
@@ -40,7 +42,7 @@ resize();
 // ------------------------------------------------------------------ game state
 const G = {
   state: 'menu', // menu | playing | station | finish | results
-  t: 0, dist: START_DIST, v: 0, step: 0, emergency: false,
+  t: 0, dist: START_DIST, v: 0, go: false, slow: false, capHit: false, emergency: false,
   head: false, cabinOn: false,
   comfort: 0.85, nextStation: 0, done: 0, leaveCapUntil: -1,
   zone: null, tunnel: null, afterTunnel: null, hinted: {}, station: null,
@@ -55,12 +57,13 @@ function newZone(k) { return { k, moving: 0, good: 0, total: 0 }; }
 function reset() {
   score = createScore();
   Object.assign(G, {
-    dist: START_DIST, v: 0, step: 0, emergency: false, head: false, cabinOn: false, comfort: 0.85,
+    dist: START_DIST, v: 0, go: false, slow: false, capHit: false, emergency: false, head: false, cabinOn: false, comfort: 0.85,
     nextStation: 0, done: 0, leaveCapUntil: -1, zone: newZone(zoneIndexAt(START_DIST)), tunnel: null, afterTunnel: null,
     hinted: {}, station: null, firstGo: false, overT: 0, scareT: 0, finishT: 0, approachSeen: -1, shortHint: false,
   });
   timers.length = 0;
   pax.reset();
+  cab.reset(false, false);
   UI.setScore(0); UI.setStops(0, 0); UI.setComfort(G.comfort); UI.setLights(false, false); UI.hintLights(false, false);
   UI.setSeats(0); UI.showSeatBox(false); UI.setCamStrip(false, 'cab'); UI.setGoMode('go'); UI.setSlowMode('slow'); UI.pulseGo(false);
   UI.setLimit(ZONES[G.zone.k].limit, false);
@@ -93,20 +96,22 @@ function currentCap() {
   return cap;
 }
 
+// hold-to-drive: the train speeds up while GO is held, brakes while SLOW is held, and keeps its speed otherwise
+const ACCEL = 5, BRAKE = 8;
+function horn(short = false) { if (short) sfx.hornShort(); else sfx.horn(); cab.act('horn'); }
+
 const handlers = {
-  go() {
+  goDown() {
     if (G.state !== 'playing') return;
-    if (!G.firstGo) { G.firstGo = true; UI.pulseGo(false); UI.hideBanner(); sfx.hornShort(); }
-    const cap = currentCap();
-    if (G.step < cap) { G.step++; G.emergency = false; sfx.tap(); }
-    else { sfx.bonk(); UI.banner(cap === 1 ? 'Slow zone!' : 'Top speed!', cap === 1 ? '🐢' : '🚀', 'warn', 1500); }
+    if (!G.firstGo) { G.firstGo = true; UI.hideBanner(); horn(true); }
+    UI.pulseGo(false);
+    G.go = true; G.capHit = false; G.emergency = false; sfx.tap();
   },
-  slow() {
-    if (G.state !== 'playing') return;
-    if (G.step > 0) { G.step--; sfx.tap(); }
-  },
-  head() { G.head = !G.head; sfx.click(G.head); UI.setLights(G.head, G.cabinOn); },
-  cabinLights() { G.cabinOn = !G.cabinOn; sfx.click(G.cabinOn); UI.setLights(G.head, G.cabinOn); },
+  goUp() { G.go = false; },
+  slowDown() { if (G.state !== 'playing') return; G.slow = true; sfx.tap(); },
+  slowUp() { G.slow = false; },
+  head() { G.head = !G.head; sfx.click(G.head); UI.setLights(G.head, G.cabinOn); cab.act('head', G.head); },
+  cabinLights() { G.cabinOn = !G.cabinOn; sfx.click(G.cabinOn); UI.setLights(G.head, G.cabinOn); cab.act('seats', G.cabinOn); },
   mute() { Audio.setMuted(!Audio.isMuted()); UI.setMuteIcon(Audio.isMuted()); },
   view(v) { if (G.state === 'station') { setView(v); UI.setCamStrip(true, v); sfx.whoosh(); } },
   leave() { if (G.state === 'station') leaveStation(); },
@@ -125,14 +130,14 @@ function start(again = false) {
   UI.showHUD(true);
   UI.setStops(0, 0);
   setView('cab', again ? 1.2 : 2.0);
-  sfx.horn();
+  horn();
   UI.pulseGo(true);
-  later(1.2, () => UI.banner('Tap GO!', '🚂', 'good', 4000));
+  later(1.2, () => UI.banner('Hold GO to drive!', '🚂', 'good', 4000));
 }
 
 function arrive() {
   const k = G.nextStation, S = STATIONS[k];
-  G.state = 'station'; G.v = 0; G.step = 0; G.emergency = false;
+  G.state = 'station'; G.v = 0; G.go = false; G.slow = false; G.emergency = false;
   UI.setGauge(0, false);
   finalizeZone(); G.zone = newZone(zoneIndexAt(G.dist));
   const e = Math.abs(G.dist - S);
@@ -172,8 +177,9 @@ function leaveStation() {
     UI.banner('Bye bye friends!', '👋', 'warn', 2200);
     sfx.sad();
   }
-  sfx.horn();
-  G.state = 'playing'; G.nextStation = k + 1; G.done = k + 1; G.leaveCapUntil = S + 60; G.step = 1; G.station = null;
+  horn();
+  G.state = 'playing'; G.nextStation = k + 1; G.done = k + 1; G.leaveCapUntil = S + 60; G.station = null;
+  UI.pulseGo(true); later(0.6, () => UI.banner('Hold GO!', '🚂', 'good', 2600));
   UI.showSeatBox(false); UI.setCamStrip(false, 'cab'); setView('cab', 1.1);
   UI.setGoMode('go'); UI.setSlowMode('slow');
   UI.setStops(G.nextStation, G.done);
@@ -210,9 +216,10 @@ function pose(name, t, outP, outT) {
     case 'cab': {
       const sx = (Math.sin(t * 1.7) * 0.025 + Math.sin(t * 0.9) * 0.012) * sp;
       const by = Math.sin(t * (6 + sp * 9)) * 0.014 * sp;
-      outP.set(-0.85 + sx, 3.55 + by, -G.dist);
-      outT.set(-0.85 + sx * 0.4, 0.55, -G.dist - 40);
-      return 62 + sp * 6;
+      // over the driver's shoulder, inside the cab
+      outP.set(0.98 + sx, 3.22 + by, -G.dist + 3.2);
+      outT.set(-0.55 + sx * 0.4, 1.0, -G.dist - 30);
+      return 66 + sp * 4;
     }
     case 'platform':
       outP.set(16, 5.4, -G.dist + 12); outT.set(2.5, 1.6, -G.dist + 12.5); return 60;
@@ -257,19 +264,22 @@ function driveUpdate(dt) {
     UI.setStops(nsIdx, G.done);
   }
 
-  if (G.state === 'finish') G.step = 0;
-  else if (G.step > cap) G.step = cap;
-
   // emergency brake if the player sails past the platform
-  if (inApproach && G.dist > S + 18 && G.step > 0) { G.step = 0; G.emergency = true; }
   if (inApproach && G.dist > S + 18 && G.v > 0) G.emergency = true;
 
-  const target = STEPS[G.step] * KMH;
-  const acc = 5, dec = G.emergency ? 16 : G.step === 0 ? 7 : 6.5;
-  const prev = G.v;
-  if (G.v < target) G.v = Math.min(target, G.v + acc * dt);
-  else if (G.v > target) G.v = Math.max(target, G.v - dec * dt);
-  if (G.v < 0.03 && target === 0) G.v = 0;
+  const capV = STEPS[cap] * KMH, prev = G.v;
+  if (G.state === 'finish' || G.emergency) G.v = Math.max(0, G.v - (G.emergency ? 16 : 7) * dt);
+  else if (G.slow) G.v = Math.max(0, G.v - BRAKE * dt);
+  else if (G.v > capV) G.v = Math.max(capV, G.v - 6.5 * dt); // auto-slow for slow zones / stations
+  else if (G.go) {
+    G.v = Math.min(capV, G.v + ACCEL * dt);
+    if (G.v >= capV && !G.capHit) {
+      G.capHit = true; sfx.bonk();
+      UI.banner(cap === 1 ? 'Slow zone!' : 'Top speed!', cap === 1 ? '🐢' : '🚀', 'warn', 1500);
+    }
+  }
+  if (G.v < 0.03 && !G.go) G.v = 0;
+  if (G.v === 0) G.emergency = false;
   G.dist += G.v * dt;
   const braking = prev - G.v;
 
@@ -313,7 +323,7 @@ function driveUpdate(dt) {
   const nearTunnel = TUNNELS.some(([a]) => G.dist > a - 170 && G.dist < a + 4);
   if (ti >= 0) {
     if (!G.tunnel) {
-      G.tunnel = { i: ti, dark: 0, head: 0, cab: 0 }; sfx.hornShort();
+      G.tunnel = { i: ti, dark: 0, head: 0, cab: 0 }; horn(true);
     }
     G.tunnel.dark += dt; if (G.head) G.tunnel.head += dt; if (G.cabinOn) G.tunnel.cab += dt;
   } else if (G.tunnel) {
@@ -345,21 +355,21 @@ function driveUpdate(dt) {
   // ---- buttons: STOP label + glow
   if (G.state === 'playing') {
     if (inApproach && dS > -30) {
-      const pred = G.dist + (G.v * G.v) / (2 * 7);
-      UI.setSlowMode(G.step > 0 && Math.abs(pred - S) < 5.5 ? 'now' : 'stop');
+      const pred = G.dist + (G.v * G.v) / (2 * BRAKE);
+      UI.setSlowMode(G.v > 0 && !G.slow && Math.abs(pred - S) < 5.5 ? 'now' : 'stop');
     } else UI.setSlowMode('slow');
   }
 
   // ---- arrive at a station
-  if (G.state === 'playing' && nsIdx < 3 && G.v === 0 && G.step === 0 && Math.abs(G.dist - S) <= 30) arrive();
-  else if (G.state === 'playing' && nsIdx < 3 && G.v === 0 && G.step === 0 && inApproach && !G.shortHint && G.dist < S - 30) {
-    G.shortHint = true; UI.banner('Tap GO to roll closer', '🚂', 'warn', 3200);
+  if (G.state === 'playing' && nsIdx < 3 && G.v === 0 && !G.go && Math.abs(G.dist - S) <= 30) arrive();
+  else if (G.state === 'playing' && nsIdx < 3 && G.v === 0 && !G.go && inApproach && !G.shortHint && G.dist < S - 30) {
+    G.shortHint = true; UI.banner('Hold GO to roll closer', '🚂', 'warn', 3200);
   }
-  if (G.step > 0) G.shortHint = false;
+  if (G.go) G.shortHint = false;
 
   // ---- end of the line
   if (G.state === 'playing' && G.nextStation >= 3 && G.dist > STATIONS[2] + 130) {
-    G.state = 'finish'; UI.banner('End of the line!', '🏁', 'good', 3000); sfx.horn();
+    G.state = 'finish'; G.go = G.slow = false; UI.banner('End of the line!', '🏁', 'good', 3000); horn();
     UI.setDriveButtonsDimmed(true);
   }
   if (G.state === 'finish' && G.v === 0) { G.finishT += dt; if (G.finishT > 1.6) finishRun(); }
@@ -386,6 +396,10 @@ function frame(now) {
   train.root.position.z = -G.dist;
   train.root.updateMatrixWorld(true);
   train.update(dt, G.v, G.head ? 1 : 0, G.cabinOn ? 1 : 0);
+  cab.update(dt, {
+    v: G.v, kmh: G.v / KMH, limit: ZONES[zoneIndexAt(G.dist)].limit, go: G.go && G.state === 'playing', slow: G.slow && G.state === 'playing',
+    dark: G.state === 'menu' || G.state === 'results' ? 0 : darkness(G.dist), cabin: train.cabinLevel, atStation: G.state === 'station', t: G.t,
+  });
 
   const dk = G.state === 'menu' || G.state === 'results' ? 0 : darkness(G.dist);
   const prog = clamp(G.dist / TOTAL, 0, 1);
@@ -427,7 +441,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) Audio
 
 // debug / testing hooks
 window.__nl = {
-  G, world, train, pax, camera, renderer, get score() { return score; }, handlers, setView,
+  G, world, train, cab, pax, camera, renderer, get score() { return score; }, handlers, setView,
   teleport(d) { G.dist = d; G.zone = newZone(zoneIndexAt(d)); },
   // step the sim manually (used for testing when rAF is throttled, e.g. hidden tab)
   advance(sec, dt = 1 / 60) {

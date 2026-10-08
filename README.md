@@ -12,14 +12,18 @@ npm run build      # static site in ./dist
 npm run preview    # serve ./dist locally
 ```
 
+On a keyboard: hold ↑/W to go, ↓/S to brake, H = headlight, L = seat lights.
+
+The camera sits inside the driver's cab, over the driver's shoulder: he pushes the throttle, pulls the brake, flips the light switches and tugs the horn cord whenever you do.
+
 Add `?fps` to the URL to show a tiny FPS / draw-call counter.
 
-## How it plays (every control is one big tap)
+## How it plays
 
 | Button | What it does |
 |---|---|
-| 🚂 **GO** | speed up one step (4 steps: stop · 🐢 20 · 🐇 40 · 🚀 60) |
-| 🐢 **SLOW** / 🛑 **STOP** | slow down one step (turns into STOP near a station and glows when *now* is the perfect moment) |
+| 🚂 **GO** (hold) | speeds up while held; let go and the train keeps its speed (max 🚀 60, auto-limited near stations) |
+| 🐢 **SLOW** / 🛑 **STOP** (hold) | brakes while held (turns into STOP near a station and glows when *now* is the moment to start braking) |
 | 💡 **FRONT** | headlight on/off |
 | 🪑 **SEATS** | passenger lights on/off |
 | 🚏 camera strip | (at stations) cab · platform view · inside the carriage |
@@ -61,6 +65,7 @@ src/main.js        game loop, state machine (menu → playing → station → fi
 src/route.js       all tuning: route length, stations, speed zones, tunnels, speed steps
 src/world.js       sky, ground, track, bridge, tunnels, stations, signs, trees, hills, village
 src/train.js       locomotive, carriages, wheels, headlight + passenger-light logic
+src/cab.js         cab interior (desk, levers, switches, dial, horn cord) + animated driver (two-bone IK arms)
 src/passengers.js  instanced passengers, boarding paths, happy/sad faces
 src/ui.js          HUD, gauge, banners, results screen, confetti
 src/audio.js       procedural WebAudio: engine chug, clacks, horn, chimes, jingles, music box

@@ -153,6 +153,7 @@ export function makeTrain() {
     funnelWorld() { return tmp.copy(funnel).applyMatrix4(root.matrixWorld); },
     wheelWorld(out) { return out.set(0, 0.5, -3).applyMatrix4(root.matrixWorld); },
     get headLevel() { return hl; },
+    get cabinLevel() { return cl; },
     update(dt, v, head, cabinOn) {
       hl += (head - hl) * Math.min(1, dt * 9);
       cl += (cabinOn - cl) * Math.min(1, dt * 7);
