@@ -27,8 +27,9 @@ class Pool {
     const mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms, transparent: true, depthWrite: false, fog: false,
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-      vertexShader: `attribute float aSize; attribute float aAlpha; uniform float uScale; varying float vA;
-        void main(){ vA = aAlpha; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = aSize * uScale / max(0.1, -mv.z); gl_Position = projectionMatrix * mv; }`,
+      vertexShader: `#include <common>
+        attribute float aSize; attribute float aAlpha; uniform float uScale; varying float vA;
+        void main(){ vA = aAlpha; vec4 mv = viewMatrix * vec4(nlBend((modelMatrix * vec4(position,1.0)).xyz), 1.0); gl_PointSize = aSize * uScale / max(0.1, -mv.z); gl_Position = projectionMatrix * mv; }`,
       fragmentShader: `uniform sampler2D map; uniform vec3 color; varying float vA;
         void main(){ float a = texture2D(map, gl_PointCoord).a * vA; if (a < 0.01) discard; gl_FragColor = vec4(color, a);
         #include <colorspace_fragment>

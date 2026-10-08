@@ -12,9 +12,13 @@ npm run build      # static site in ./dist
 npm run preview    # serve ./dist locally
 ```
 
-On a keyboard: hold ↑/W to go, ↓/S to brake, H = headlight, L = seat lights.
+On a keyboard: hold ↑/W to go, ↓/S to brake, H = headlight, L = seat lights, C = switch camera.
 
 The camera sits inside the driver's cab, over the driver's shoulder: he pushes the throttle, pulls the brake, flips the light switches and tugs the horn cord whenever you do.
+
+The track curves left and right and rolls over hills (stations and the bridge sit on straight, flat stretches).
+
+A small **passenger window** (top right) pops up for a few seconds when you press SEATS, and stays up in tunnels or when passengers get scared, so you can watch their carriage light up and their faces change.
 
 Add `?fps` to the URL to show a tiny FPS / draw-call counter.
 
@@ -26,6 +30,7 @@ Add `?fps` to the URL to show a tiny FPS / draw-call counter.
 | 🐢 **SLOW** / 🛑 **STOP** (hold) | brakes while held (turns into STOP near a station and glows when *now* is the moment to start braking) |
 | 💡 **FRONT** | headlight on/off |
 | 🪑 **SEATS** | passenger lights on/off |
+| 🚆 / 🧑‍✈️ camera button (left) | swap between the driver's cab view and the outside chase view (remembered) |
 | 🚏 camera strip | (at stations) cab · platform view · inside the carriage |
 | 🚩 **LET'S GO!** | depart (orange = some friends still waiting, green = everyone aboard) |
 
@@ -57,12 +62,14 @@ Add `?fps` to the URL to show a tiny FPS / draw-call counter.
 ## Performance notes (iPad-friendly by design)
 * ≈ 35–70 draw calls and ≈ 55–60k triangles per frame (measured in real Chrome via DevTools: ~0.6 ms/frame on a desktop GPU at 2× pixel ratio – lots of headroom; only the iPad itself can confirm 60 fps, so open it with `?fps` there).
 * Pixel ratio capped at 2, **no shadow maps, no post-processing**, only **one real light** (the headlight `SpotLight`) + a hemisphere light. Window glow, tunnel lamps, headlight cone, carriage lights are all emissive/additive fakes.
+* The world is modelled straight and **bent in the vertex shader** (`bend.js`), so frustum culling is off; instead every short object is switched off when its stretch of track is far from the train. The passenger window only draws the train, passengers, ground and sky.
 * Trees are built in 250 m **chunks** (instanced, shared geometry/materials); chunks behind or far ahead of the train are switched off, so ~3 of 11 are drawn at any time. Hills, poles, wheels, passengers and sleepers are instanced; scenery props are merged vertex-coloured meshes. Steam and sparks use two fixed-size particle pools (one draw call each).
 
 ## Project layout
 ```
 src/main.js        game loop, state machine (menu → playing → station → finish → results), camera rig, rules
 src/route.js       all tuning: route length, stations, speed zones, tunnels, speed steps
+src/bend.js        curves + hills: bends every vertex onto the track at draw time (game logic stays straight)
 src/world.js       sky, ground, track, bridge, tunnels, stations, signs, trees, hills, village
 src/train.js       locomotive, carriages, wheels, headlight + passenger-light logic
 src/cab.js         cab interior (desk, levers, switches, dial, horn cord) + animated driver (two-bone IK arms)

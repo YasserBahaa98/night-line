@@ -12,6 +12,9 @@ import { makeCab } from './cab.js';
 import { makePassengers } from './passengers.js';
 import { makeFx } from './fx.js';
 import { MAX, createScore, starsFor, loadBest, saveBest } from './scoring.js';
+import { installBend, bend, noCull } from './bend.js';
+
+installBend(); // curve + hills for every shader; must run before anything is drawn
 
 const sfx = Audio.sfx;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -33,6 +36,21 @@ const cab = makeCab(train.root, {
 });
 const pax = makePassengers(scene, train.seats, train.doors);
 const fx = makeFx(scene);
+noCull(train.root);
+// the headlight is a real light, so it can't be bent by the shader: it lives in the scene and is moved every frame
+scene.add(train.spot, train.spot.target);
+const spotP = new THREE.Vector3(), spotT = new THREE.Vector3();
+function placeHeadlight() {
+  train.spot.position.copy(bend(spotP.set(0, 2.4, -G.dist - 6.5)));
+  train.spot.target.position.copy(bend(spotT.set(0, 0.2, -G.dist - 45)));
+}
+
+// picture-in-picture camera inside the carriages (see updatePip)
+const pipCam = new THREE.PerspectiveCamera(72, 1.6, 0.1, 700);
+// it only draws layer 1: everything except the scenery (trees, signs, stations...), to keep it cheap
+pipCam.layers.set(1);
+scene.traverse((o) => o.layers.enable(1));
+world.scenery.forEach((s) => s.traverse((o) => o.layers.disable(1)));
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -47,7 +65,7 @@ resize();
 const G = {
   state: 'menu', // menu | playing | station | finish | results
   t: 0, dist: START_DIST, v: 0, go: false, slow: false, capHit: false, emergency: false,
-  head: false, cabinOn: false,
+  head: false, cabinOn: false, pipUntil: 0,
   comfort: 0.85, nextStation: 0, done: 0, leaveCapUntil: -1,
   zone: null, tunnel: null, afterTunnel: null, hinted: {}, station: null,
   firstGo: false, overT: 0, scareT: 0, finishT: 0, approachSeen: -1, shortHint: false,
@@ -57,6 +75,11 @@ const timers = [];
 const later = (sec, fn) => timers.push({ t: sec, fn });
 
 function newZone(k) { return { k, moving: 0, good: 0, total: 0 }; }
+
+// the player's driving camera: 'cab' (inside, over the driver's shoulder) or 'chase' (outside, behind the train)
+let mainView = 'cab';
+try { if (localStorage.getItem('nl.view') === 'chase') mainView = 'chase'; } catch { /* no storage */ }
+UI.setViewButton(mainView);
 
 function reset() {
   score = createScore();
@@ -118,9 +141,15 @@ const handlers = {
     G.slow = false;
   },
   head() { G.head = !G.head; sfx.tap(); UI.setLights(G.head, G.cabinOn); cab.act('head', G.head); },
-  cabinLights() { G.cabinOn = !G.cabinOn; sfx.tap(); UI.setLights(G.head, G.cabinOn); cab.act('seats', G.cabinOn); },
+  cabinLights() { G.cabinOn = !G.cabinOn; sfx.tap(); UI.setLights(G.head, G.cabinOn); cab.act('seats', G.cabinOn); G.pipUntil = G.t + 6; },
+  swapView() {
+    if (G.state !== 'playing' && G.state !== 'finish') return;
+    mainView = mainView === 'cab' ? 'chase' : 'cab';
+    try { localStorage.setItem('nl.view', mainView); } catch { /* no storage */ }
+    UI.setViewButton(mainView); setView(mainView, 0.9); sfx.whoosh();
+  },
   mute() { Audio.setMuted(!Audio.isMuted()); UI.setMuteIcon(Audio.isMuted()); },
-  view(v) { if (G.state === 'station') { setView(v); UI.setCamStrip(true, v); sfx.whoosh(); } },
+  view(v) { if (G.state === 'station') { setView(v === 'cab' ? mainView : v); UI.setCamStrip(true, v); sfx.whoosh(); } },
   leave() { if (G.state === 'station') leaveStation(); },
   play() { start(); },
   again() { UI.hideResults(); start(true); },
@@ -136,7 +165,7 @@ function start(again = false) {
   G.state = 'playing';
   UI.showHUD(true);
   UI.setStops(0, 0);
-  setView('cab', again ? 1.2 : 2.0);
+  setView(mainView, again ? 1.2 : 2.0);
   horn();
   UI.pulseGo(true);
   later(1.2, () => UI.banner('Hold GO to drive!', '🚂', 'good', 4000));
@@ -187,7 +216,7 @@ function leaveStation() {
   horn();
   G.state = 'playing'; G.nextStation = k + 1; G.done = k + 1; G.leaveCapUntil = S + 60; G.station = null;
   UI.pulseGo(true); later(0.6, () => UI.banner('Hold GO!', '🚂', 'good', 2600));
-  UI.showSeatBox(false); UI.setCamStrip(false, 'cab'); setView('cab', 1.1);
+  UI.showSeatBox(false); UI.setCamStrip(false, 'cab'); setView(mainView, 1.1);
   UI.setGoMode('go'); UI.setSlowMode('slow');
   UI.setStops(G.nextStation, G.done);
 }
@@ -228,6 +257,17 @@ function pose(name, t, outP, outT) {
       outT.set(-0.55 + sx * 0.4, 1.0, -G.dist - 30);
       return 66 + sp * 4;
     }
+    case 'chase': { // outside: behind and above the train, looking down the line
+      const sway = Math.sin(t * 0.25) * 1.2;
+      // inside tunnels it swoops down to tail the last carriage (up high it would be inside the rock)
+      const dc = G.dist - 40;
+      let k = 0;
+      for (const [a, b] of TUNNELS) k = Math.max(k, clamp((dc - (a - 30)) / 25, 0, 1) * clamp((b + 12 - dc) / 25, 0, 1));
+      const s = k * k * (3 - 2 * k);
+      outP.set((5.5 + sway) * (1 - s), 13.5 - s * 9.6, -G.dist + 46 - s * 15);
+      outT.set(0.5 * (1 - s), -1 + s * 3, -G.dist - 20 + s * 8);
+      return 54 + s * 8;
+    }
     case 'platform':
       outP.set(16, 5.4, -G.dist + 12); outT.set(2.5, 1.6, -G.dist + 12.5); return 60;
     case 'inside':
@@ -247,10 +287,11 @@ function updateCamera(dt, t) {
     const e = ease(blend);
     camPos.lerpVectors(frozen.pos, pA, e); camTgt.lerpVectors(frozen.tgt, pT, e); camFov = frozen.fov + (fov - frozen.fov) * e;
   } else { camPos.copy(pA); camTgt.copy(pT); camFov = fov; }
-  camera.position.copy(camPos);
-  camera.lookAt(camTgt);
+  // poses are in straight space: bend them onto the curvy, hilly track
+  camera.position.copy(bend(pA.copy(camPos)));
+  camera.lookAt(bend(pT.copy(camTgt)));
   // the dashboard hides the bottom third: push the picture up so the horizon sits in the visible area
-  viewShift += ((view === 'cab' ? 0.12 : 0.05) - viewShift) * Math.min(1, dt * 3);
+  viewShift += ((view === 'cab' || view === 'chase' ? 0.12 : 0.05) - viewShift) * Math.min(1, dt * 3);
   viewShiftX += ((G.state === 'menu' ? 0.12 : 0) - viewShiftX) * Math.min(1, dt * 3); // menu: train sits right of the title card
   camera.setViewOffset(innerWidth, innerHeight, viewShiftX * innerWidth, viewShift * innerHeight, innerWidth, innerHeight);
   if (view === 'cab' && blend >= 1) camera.rotateZ(Math.sin(t * 1.3) * 0.006 * clamp(G.v / 36, 0, 1));
@@ -430,12 +471,34 @@ function frame(now) {
   fx.update(dt, renderer.domElement.height, camera.fov, 0.3 + 0.7 * (1 - dk));
 
   updateCamera(dt, t);
+  placeHeadlight();
   renderer.render(scene, camera);
+  updatePip(dk);
 
   if (fpsOn) {
     fpsN++; fpsT += dt;
     if (fpsT >= 1) { UI.el.fps.textContent = `${fpsN} fps  ${renderer.info.render.calls} calls  ${(renderer.info.render.triangles / 1000).toFixed(0)}k tris`; fpsN = 0; fpsT = 0; }
   }
+}
+
+// Passenger window: pops up for a few seconds after SEATS is pressed, and stays up whenever it's dark
+// (tunnels) or the passengers are getting scared - the moments when you want to see their faces.
+const pipBox = new THREE.Vector4();
+function updatePip(dk) {
+  const driving = G.state === 'playing' || G.state === 'finish';
+  const near = TUNNELS.some(([a, b]) => G.dist > a - 120 && G.dist < b + 20);
+  const show = driving && (G.t < G.pipUntil || near || dk > 0.2 || G.comfort < 0.45);
+  UI.showPip(show);
+  if (!show || !UI.pipRect(pipBox)) return;
+  const [x, y, w, h] = pipBox.toArray();
+  pipCam.aspect = w / h; pipCam.updateProjectionMatrix();
+  // from the back of the rear carriage, looking forward down the aisle
+  pipCam.position.copy(bend(spotP.set(0.45, 2.7, -G.dist + 24.2)));
+  pipCam.lookAt(bend(spotT.set(-0.1, 1.45, -G.dist + 6)));
+  renderer.setScissorTest(true);
+  renderer.setScissor(x, innerHeight - y - h, w, h); renderer.setViewport(x, innerHeight - y - h, w, h);
+  renderer.render(scene, pipCam);
+  renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight);
 }
 
 let fpsOn = /[?&]fps/.test(location.search), fpsN = 0, fpsT = 0;

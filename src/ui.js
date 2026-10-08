@@ -7,7 +7,7 @@ const el = {
   stops: $('stops'), banner: $('banner'), bannerIcon: $('bannerIcon'), bannerText: $('bannerText'),
   seatBox: $('seatBox'), seatNum: $('seatNum'), pips: $('pips'),
   face: $('face'), comfortFill: $('comfortFill'), mute: $('btnMute'),
-  camStrip: $('camStrip'), dash: $('dash'),
+  camStrip: $('camStrip'), dash: $('dash'), view: $('btnView'), pip: $('pip'),
   slow: $('btnSlow'), go: $('btnGo'), leave: $('btnLeave'), head: $('btnHead'), cabin: $('btnCabin'),
   gauge: $('gauge'), needle: $('needle'), bandSlow: $('bandSlow'), bandGood: $('bandGood'), bandFast: $('bandFast'),
   limitSign: $('limitSign'), limitIcon: $('limitIcon'), limitNum: $('limitNum'),
@@ -40,10 +40,18 @@ export function setLimit(limit, bounce = true) {
   el.limitIcon.textContent = SIGN_ICON[limit]; el.limitNum.textContent = limit;
   if (bounce) { el.limitSign.classList.remove('bounce'); void el.limitSign.offsetWidth; el.limitSign.classList.add('bounce'); }
 }
+const speedArc = $('speedArc');
 export function setGauge(kmh, over) {
   const a = (Math.min(GMAX, kmh) / GMAX) * 180 - 90;
   const key = Math.round(a * 2);
-  if (cache.needle !== key) { cache.needle = key; el.needle.style.transform = `rotate(${a.toFixed(1)}deg)`; }
+  if (cache.needle !== key) {
+    cache.needle = key; el.needle.style.transform = `rotate(${a.toFixed(1)}deg)`;
+    // bright glowing arc from 0 up to the current speed, coloured by the band the needle is in
+    speedArc.setAttribute('d', arc(0, Math.min(GMAX, kmh)));
+  }
+  const lim = cache.limit || 40;
+  const col = over || kmh > lim + 1.5 ? '#ff5a5a' : kmh >= lim - 20 ? '#4ddb7a' : '#ffcf4a';
+  if (cache.arcCol !== col) { cache.arcCol = col; speedArc.setAttribute('stroke', col); }
   toggle(el.gauge, 'over', over);
 }
 
@@ -122,7 +130,22 @@ export function seatsFull() { el.seatBox.classList.add('full'); }
 
 export function setCamStrip(show, view) {
   el.camStrip.classList.toggle('show', show);
+  el.view.classList.toggle('away', show);
   el.camStrip.querySelectorAll('.cam').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+}
+
+// ---------- driving camera button + passenger window ----------
+export function setViewButton(view) { // the button shows where it will take you
+  el.view.querySelector('.ic').textContent = view === 'cab' ? '🚆' : '🧑‍✈️';
+  el.view.querySelector('em').textContent = view === 'cab' ? 'OUTSIDE' : 'DRIVER';
+}
+export function showPip(on) { toggle(el.pip, 'hidden-pip', !on); }
+// inner rectangle of the passenger window (inside its border), in CSS pixels; false while it is too small
+export function pipRect(out) {
+  const r = el.pip.getBoundingClientRect(), b = 4 * (r.width / el.pip.offsetWidth || 1);
+  if (r.width < 40) return false;
+  out.set(Math.round(r.left + b), Math.round(r.top + b), Math.round(r.width - 2 * b), Math.round(r.height - 2 * b));
+  return true;
 }
 
 // ---------- menu ----------
@@ -152,13 +175,14 @@ export function bind(h) {
   hold(el.go, () => h.goDown(), () => h.goUp());
   hold(el.slow, () => h.slowDown(), () => h.slowUp());
   press(el.leave, () => h.leave());
+  press(el.view, () => h.swapView());
   // keyboard (desktop): hold Up/W to go, Down/S to brake, H headlight, L seat lights
   const keys = { ArrowUp: ['goDown', 'goUp', el.go], KeyW: ['goDown', 'goUp', el.go], ArrowDown: ['slowDown', 'slowUp', el.slow], KeyS: ['slowDown', 'slowUp', el.slow] };
   addEventListener('keydown', (e) => {
     const k = keys[e.code];
     if (k) { e.preventDefault(); if (!e.repeat) { k[2].classList.add('held'); h[k[0]](); } return; }
     if (e.repeat) return;
-    if (e.code === 'KeyH') h.head(); else if (e.code === 'KeyL') h.cabinLights();
+    if (e.code === 'KeyH') h.head(); else if (e.code === 'KeyL') h.cabinLights(); else if (e.code === 'KeyC') h.swapView();
   });
   addEventListener('keyup', (e) => { const k = keys[e.code]; if (k) { k[2].classList.remove('held'); h[k[1]](); } });
   addEventListener('blur', () => { h.goUp(); h.slowUp(); el.go.classList.remove('held'); el.slow.classList.remove('held'); });

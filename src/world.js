@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { bx, cylY, merge, paint, rng, canvasTex, glowTex } from './geo.js';
+import { noBend, noCull } from './bend.js';
 import { TOTAL, STATIONS, STATION_NAMES, STATION_ICONS, TUNNELS, BRIDGE, VILLAGE, ZONES, PLAT, SIGN_ICON, signDist } from './route.js';
 
-const Z = (d) => -d; // dist along the track -> world z
+const Z = (d) => -d; // dist along the track -> straight-space z (bend.js curves it at draw time)
+const segs = (len, every = 4) => Math.max(1, Math.ceil(len / every)); // long pieces need vertices to bend
 
 const vcLambert = () => new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const lambert = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, flatShading: true, ...extra });
@@ -85,7 +87,7 @@ export function makeWorld(scene) {
     starPos[i * 3] = 560 * Math.sin(ph) * Math.cos(th); starPos[i * 3 + 1] = 560 * Math.cos(ph); starPos[i * 3 + 2] = 560 * Math.sin(ph) * Math.sin(th);
   }
   const starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-  const starMat = new THREE.PointsMaterial({ color: 0xfff6dd, size: 2.6, sizeAttenuation: false, transparent: true, opacity: 0.3, depthWrite: false, fog: false });
+  const starMat = noBend(new THREE.PointsMaterial({ color: 0xfff6dd, size: 2.6, sizeAttenuation: false, transparent: true, opacity: 0.3, depthWrite: false, fog: false }));
   skyGroup.add(new THREE.Points(starGeo, starMat));
 
   const moonTex = canvasTex(256, 256, (g) => {
@@ -95,7 +97,7 @@ export function makeWorld(scene) {
     g.fillStyle = 'rgba(210,196,150,.55)';
     [[112, 116, 10], [140, 138, 8], [126, 150, 6]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); });
   });
-  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonTex, transparent: true, opacity: 0.5, depthWrite: false, fog: false }));
+  const moon = new THREE.Sprite(noBend(new THREE.SpriteMaterial({ map: moonTex, transparent: true, opacity: 0.5, depthWrite: false, fog: false })));
   moon.scale.set(110, 110, 1); moon.position.set(-210, 200, -430);
   skyGroup.add(moon);
 
@@ -104,7 +106,7 @@ export function makeWorld(scene) {
     grd.addColorStop(0, 'rgba(255,250,220,1)'); grd.addColorStop(0.18, 'rgba(255,214,140,.95)'); grd.addColorStop(0.4, 'rgba(255,150,90,.4)'); grd.addColorStop(1, 'rgba(255,120,80,0)');
     g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
   });
-  const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTex, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+  const sun = new THREE.Sprite(noBend(new THREE.SpriteMaterial({ map: sunTex, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending })));
   sun.scale.set(380, 380, 1);
   skyGroup.add(sun);
   scene.add(skyGroup);
@@ -112,7 +114,7 @@ export function makeWorld(scene) {
   // ---- ground ---------------------------------------------------------------------------------
   {
     const len = TOTAL + 800;
-    const g = new THREE.PlaneGeometry(1300, len, 26, 100);
+    const g = new THREE.PlaneGeometry(800, len, 20, segs(len, 10));
     g.rotateX(-Math.PI / 2);
     g.translate(0, -0.02, -(TOTAL / 2) + 150);
     const n = g.attributes.position.count; const col = new Float32Array(n * 3); const base = new THREE.Color(0x3f8060); const t = new THREE.Color();
@@ -128,7 +130,7 @@ export function makeWorld(scene) {
   {
     const ballastMat = lambert(0x7a7388);
     const seg = (a, b) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.34, b - a), ballastMat);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.34, b - a, 1, 1, segs(b - a)), ballastMat);
       m.position.set(0, 0.17, Z((a + b) / 2)); scene.add(m);
     };
     seg(-60, BRIDGE[0]); seg(BRIDGE[1], TOTAL + 250);
@@ -141,16 +143,18 @@ export function makeWorld(scene) {
 
     const railMat = lambert(0xcfcde0);
     for (const x of [-0.72, 0.72]) {
-      const r = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.2, TOTAL + 320), railMat);
+      const r = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.2, TOTAL + 320, 1, 1, segs(TOTAL + 320, 3)), railMat);
       r.position.set(x, 0.5, Z((TOTAL + 250 - 70) / 2));
       scene.add(r);
     }
   }
 
+  const sceneryFrom = scene.children.length; // everything from here on is scenery (not drawn in the passenger window)
+
   // ---- river + bridge -------------------------------------------------------------------------
   {
     const cz = Z((BRIDGE[0] + BRIDGE[1]) / 2), len = BRIDGE[1] - BRIDGE[0];
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(1300, len - 8).rotateX(-Math.PI / 2),
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(800, len - 8).rotateX(-Math.PI / 2),
       new THREE.MeshLambertMaterial({ color: 0x4aa8d8, emissive: 0x153a66, flatShading: true }));
     water.position.set(0, 0.03, cz); scene.add(water);
     world.water = water;
@@ -180,13 +184,13 @@ export function makeWorld(scene) {
     for (const [a, b] of TUNNELS) {
       const len = b - a, cz = Z((a + b) / 2);
       const mk = (r, mat, sl) => {
-        const g = new THREE.CylinderGeometry(r, r, len, 16, 1, true, Math.PI / 2, Math.PI);
+        const g = new THREE.CylinderGeometry(r, r, len, 16, segs(len), true, Math.PI / 2, Math.PI);
         g.rotateX(Math.PI / 2);
         const m = new THREE.Mesh(g, mat); m.position.set(0, 0, cz); scene.add(m); return m;
       };
       mk(5.6, shellMat); mk(14, domeMat);
       // inner floor strip so the headlight has something to hit
-      const fl = new THREE.Mesh(new THREE.PlaneGeometry(11.2, len).rotateX(-Math.PI / 2), lambert(0x3a3848));
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(11.2, len, 1, segs(len)).rotateX(-Math.PI / 2), lambert(0x3a3848));
       fl.position.set(0, 0.0, cz); scene.add(fl);
       const f1 = new THREE.Mesh(faceGeo, faceMat); f1.position.set(0, 0, Z(a)); scene.add(f1);
       const f2 = new THREE.Mesh(faceGeo, faceMat); f2.position.set(0, 0, Z(b)); f2.rotation.y = Math.PI; scene.add(f2);
@@ -266,6 +270,7 @@ export function makeWorld(scene) {
       const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 12, 14, 1, true).translate(0, 6, 0),
         new THREE.MeshBasicMaterial({ color: 0x6dffa0, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
       beam.position.set(3.6, 0.9, Z(S)); beam.visible = false; beam.renderOrder = 2; scene.add(beam);
+      [marker, arrow, beam].forEach((o) => { o.userData.keepVis = true; });
       world.stations.push({ S, marker, arrow, beam });
     });
   }
@@ -319,8 +324,9 @@ export function makeWorld(scene) {
     const HN = 90; const hills = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), lambert(0xffffff), HN);
     const hcols = [0x5b6cb4, 0x6a6fb8, 0x4f8a86, 0x7a64a8, 0x4d7f9c];
     for (let i = 0; i < HN; i++) {
-      const side = i % 2 ? 1 : -1; const d = R() * (TOTAL + 500) - 200; const x = side * (70 + R() * 190);
-      const sx = 28 + R() * 50, sy = 12 + R() * 30, sz = 28 + R() * 50;
+      const side = i % 2 ? 1 : -1; const d = R() * (TOTAL + 500) - 200; const x = side * (115 + R() * 170);
+      // keep the near edge well clear of the track so they read as distant hills from the chase camera
+      const sx = Math.min(28 + R() * 50, Math.abs(x) - 65), sy = 12 + R() * 30, sz = 28 + R() * 50;
       m.makeScale(sx, sy, sz).setPosition(x, sy * 0.15, Z(d)); hills.setMatrixAt(i, m);
       hills.setColorAt(i, col.set(hcols[Math.floor(R() * hcols.length)]));
     }
@@ -366,6 +372,20 @@ export function makeWorld(scene) {
     scene.add(new THREE.Mesh(merge(wl), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
   }
 
+  noCull(scene);
+
+  // Culling along the track: three's frustum culling can't be used on bent objects, so every short object
+  // remembers which stretch of track it covers and is switched off when that stretch is far from the train.
+  const box = new THREE.Box3();
+  world.ranged = [];
+  world.scenery = scene.children.slice(sceneryFrom);
+  for (const o of world.scenery) {
+    if (o.isInstancedMesh || o.userData.keepVis || !o.geometry) continue;
+    o.geometry.computeBoundingBox(); box.copy(o.geometry.boundingBox);
+    const d0 = -(o.position.z + box.max.z), d1 = -(o.position.z + box.min.z);
+    if (d1 - d0 < 700) world.ranged.push({ o, d0, d1 });
+  }
+
   // ---- per-frame environment ------------------------------------------------------------------
   world.setEnv = (dk, prog, headLevel) => {
     _a.copy(C.dayTop).lerp(C.twiTop, prog * 0.8).lerp(C.nightTop, dk);
@@ -383,6 +403,7 @@ export function makeWorld(scene) {
   };
 
   world.update = (t, camera, active, dist = 0) => {
+    for (const r of world.ranged) r.o.visible = r.d1 > dist - 160 && r.d0 < dist + 480;
     for (const ch of world.chunks) { const v = dist > ch.d0 - 480 && dist < ch.d1 + 90; if (ch.meshes[0].visible !== v) ch.meshes.forEach((x) => { x.visible = v; }); }
     skyGroup.position.copy(camera.position);
     world.water.position.y = 0.03 + Math.sin(t * 1.4) * 0.012;

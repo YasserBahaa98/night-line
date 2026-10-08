@@ -35,6 +35,9 @@
       <button id="btnMute" class="mini" aria-label="sound">🔊</button>
     </div>
 
+    <button id="btnView" class="cam" aria-label="switch camera"><span class="ic">🚆</span><em>OUTSIDE</em></button>
+    <div id="pip" class="hidden-pip"><span class="lbl">🪑 Friends</span></div>
+
     <div id="camStrip">
       <button data-view="cab" class="cam on" aria-label="driver">🚂</button>
       <button data-view="platform" class="cam" aria-label="platform">🚏</button>
@@ -46,10 +49,24 @@
       <button id="btnHead" class="tog"><span class="ic">💡</span><em>FRONT</em></button>
       <div id="gauge">
         <svg viewBox="0 0 200 118" aria-hidden="true">
-          <path id="bandSlow" fill="none" stroke="#ffcf4a" stroke-width="15" />
-          <path id="bandGood" fill="none" stroke="#4ddb7a" stroke-width="15" />
-          <path id="bandFast" fill="none" stroke="#ff5a5a" stroke-width="15" />
-          <g id="needle"><path d="M100 100 L95 100 L100 30 L105 100 Z" fill="#fff6e6" stroke="#2f2b45" stroke-width="2.5" stroke-linejoin="round" /></g>
+          <defs>
+            <filter id="gGlow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="2.6" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <linearGradient id="gNeedle" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0" stop-color="#ffd23f" /><stop offset="1" stop-color="#ffffff" />
+            </linearGradient>
+          </defs>
+          <path id="bandSlow" class="band" fill="none" stroke="#ffcf4a" stroke-width="15" />
+          <path id="bandGood" class="band" fill="none" stroke="#4ddb7a" stroke-width="15" />
+          <path id="bandFast" class="band" fill="none" stroke="#ff5a5a" stroke-width="15" />
+          <path id="speedArc" fill="none" stroke="#4ddb7a" stroke-width="17" filter="url(#gGlow)" />
+          <g id="needle">
+            <path d="M100 100 L92.5 96 L100 21 L107.5 96 Z" fill="url(#gNeedle)" stroke="#fff6c8" stroke-width="1.5" stroke-linejoin="round" filter="url(#gGlow)" />
+            <circle class="tip" cx="100" cy="23" r="6.5" fill="#ffffff" filter="url(#gGlow)" />
+            <path class="star" d="M100 9 L102.6 20.4 L114 23 L102.6 25.6 L100 37 L97.4 25.6 L86 23 L97.4 20.4 Z" fill="#fffbe0" />
+          </g>
         </svg>
         <div id="limitSign"><span id="limitIcon">🐇</span><b id="limitNum">40</b></div>
       </div>
